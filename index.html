@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>주식 대시보드</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { font-family: 'Inter', sans-serif; }
+    body { background: #0f1117; color: #e1e5ea; }
+    .card { background: #1a1d27; border: 1px solid #2a2d3a; border-radius: 12px; }
+    .glow-green { box-shadow: 0 0 12px rgba(34,197,94,0.15); }
+    .glow-red { box-shadow: 0 0 12px rgba(239,68,68,0.15); }
+    .ticker-scroll { animation: scroll 30s linear infinite; }
+    @keyframes scroll { 0%{transform:translateX(0)} 100%{transform:translateX(-50%)} }
+    .ticker-scroll:hover { animation-play-state: paused; }
+    input:focus { outline: none; box-shadow: 0 0 0 2px rgba(59,130,246,0.5); }
+    .tab-active { background: #2563eb; color: #fff; }
+    .tab-inactive { background: transparent; color: #9ca3af; }
+    .tab-inactive:hover { background: #2a2d3a; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: #1a1d27; }
+    ::-webkit-scrollbar-thumb { background: #3a3d4a; border-radius: 3px; }
+  </style>
+</head>
+<body class="min-h-screen">
+  <header class="sticky top-0 z-50 border-b border-[#2a2d3a] bg-[#0f1117]/90 backdrop-blur-sm">
+    <div class="max-w-[1440px] mx-auto px-4 py-3 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-2">
+        <svg class="w-7 h-7 text-blue-500" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 16l4-6 4 4 5-8"/></svg>
+        <span class="text-lg font-semibold tracking-tight">StockDash</span>
+      </div>
+      <div class="flex-1 max-w-md">
+        <input id="searchInput" type="text" placeholder="종목 검색 (예: AAPL, 005930)" class="w-full bg-[#1a1d27] border border-[#2a2d3a] rounded-lg px-4 py-2 text-sm placeholder-gray-500">
+      </div>
+      <div class="flex items-center gap-3 text-sm text-gray-400">
+        <span id="lastUpdate"></span>
+        <button id="refreshBtn" class="p-2 rounded-lg hover:bg-[#2a2d3a] transition" title="새로고침">
+          <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 105.6-12.6L1 10"/></svg>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <div class="border-b border-[#2a2d3a] overflow-hidden bg-[#141620]">
+    <div id="tickerBar" class="flex whitespace-nowrap ticker-scroll py-2 text-xs font-medium"></div>
+  </div>
+
+  <main class="max-w-[1440px] mx-auto px-4 py-6 space-y-6">
+    <section>
+      <h2 class="text-sm font-medium text-gray-400 mb-3">시장 지수</h2>
+      <div id="indicesGrid" class="grid grid-cols-2 md:grid-cols-4 gap-3"></div>
+    </section>
+
+    <section>
+      <div class="flex gap-2 mb-4">
+        <button data-tab="watchlist" class="tab-btn tab-active px-4 py-2 rounded-lg text-sm font-medium transition">관심종목</button>
+        <button data-tab="holdings" class="tab-btn tab-inactive px-4 py-2 rounded-lg text-sm font-medium transition">보유종목</button>
+        <button data-tab="sector" class="tab-btn tab-inactive px-4 py-2 rounded-lg text-sm font-medium transition">섹터별</button>
+      </div>
+      <div id="tab-watchlist" class="tab-content">
+        <div id="watchlistGrid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3"></div>
+      </div>
+      <div id="tab-holdings" class="tab-content hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div class="lg:col-span-2 card p-4">
+            <h3 class="text-sm font-medium text-gray-400 mb-3">보유 현황</h3>
+            <table class="w-full text-sm"><thead><tr class="text-gray-500 border-b border-[#2a2d3a]"><th class="text-left py-2 font-medium">종목</th><th class="text-right py-2 font-medium">수량</th><th class="text-right py-2 font-medium">평균단가</th><th class="text-right py-2 font-medium">현재가</th><th class="text-right py-2 font-medium">수익률</th></tr></thead><tbody id="holdingsBody"></tbody></table>
+          </div>
+          <div class="card p-4">
+            <h3 class="text-sm font-medium text-gray-400 mb-3">자산 구성</h3>
+            <canvas id="portfolioChart" height="260"></canvas>
+            <div id="portfolioTotal" class="mt-4 text-center"></div>
+          </div>
+        </div>
+      </div>
+      <div id="tab-sector" class="tab-content hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="card p-4"><h3 class="text-sm font-medium text-gray-400 mb-3">섹터별 수익률</h3><canvas id="sectorChart" height="300"></canvas></div>
+          <div class="card p-4"><h3 class="text-sm font-medium text-gray-400 mb-3">섹터별 비중</h3><canvas id="sectorPieChart" height="300"></canvas></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <div class="card p-4">
+        <div class="flex items-center justify-between mb-3">
+          <div><h3 id="chartTitle" class="font-semibold">AAPL</h3><span id="chartSubtitle" class="text-sm text-gray-400">Apple Inc.</span></div>
+          <div class="flex gap-1" id="chartRangeBtns">
+            <button data-range="7" class="range-btn px-3 py-1 rounded text-xs bg-[#2a2d3a] text-gray-400 hover:bg-[#3a3d4a] transition">1W</button>
+            <button data-range="30" class="range-btn px-3 py-1 rounded text-xs bg-blue-600 text-white transition">1M</button>
+            <button data-range="90" class="range-btn px-3 py-1 rounded text-xs bg-[#2a2d3a] text-gray-400 hover:bg-[#3a3d4a] transition">3M</button>
+            <button data-range="180" class="range-btn px-3 py-1 rounded text-xs bg-[#2a2d3a] text-gray-400 hover:bg-[#3a3d4a] transition">6M</button>
+            <button data-range="365" class="range-btn px-3 py-1 rounded text-xs bg-[#2a2d3a] text-gray-400 hover:bg-[#3a3d4a] transition">1Y</button>
+          </div>
+        </div>
+        <canvas id="priceChart" height="280"></canvas>
+      </div>
+    </section>
+
+    <section>
+      <h2 class="text-sm font-medium text-gray-400 mb-3">주요 뉴스</h2>
+      <div id="newsGrid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+    </section>
+  </main>
+
+  <script>
+  const STOCKS = {
+    AAPL:  { name:'Apple Inc.',       price:189.84, change:2.35,  pct:1.25,  sector:'Technology' },
+    MSFT:  { name:'Microsoft Corp.',  price:425.52, change:5.10,  pct:1.21,  sector:'Technology' },
+    GOOGL: { name:'Alphabet Inc.',    price:175.98, change:-1.23, pct:-0.69, sector:'Technology' },
+    AMZN:  { name:'Amazon.com Inc.',  price:185.07, change:3.40,  pct:1.87,  sector:'Consumer' },
+    NVDA:  { name:'NVIDIA Corp.',     price:131.88, change:8.52,  pct:6.91,  sector:'Technology' },
+    TSLA:  { name:'Tesla Inc.',       price:178.50, change:-4.20, pct:-2.30, sector:'Auto' },
+    META:  { name:'Meta Platforms',   price:505.75, change:6.30,  pct:1.26,  sector:'Technology' },
+    JPM:   { name:'JPMorgan Chase',   price:205.30, change:1.85,  pct:0.91,  sector:'Finance' },
+    V:     { name:'Visa Inc.',        price:282.15, change:0.95,  pct:0.34,  sector:'Finance' },
+    JNJ:   { name:'Johnson & Johnson',price:152.40, change:-0.80, pct:-0.52, sector:'Healthcare' },
+    '005930':{ name:'삼성전자',        price:83500,  change:1500,  pct:1.83,  sector:'Technology' },
+    '000660':{ name:'SK하이닉스',      price:185000, change:3500,  pct:1.93,  sector:'Technology' },
+    '035720':{ name:'카카오',          price:42500,  change:-850,  pct:-1.96, sector:'Tech' },
+    '051910':{ name:'LG화학',          price:315000, change:-4500, pct:-1.41, sector:'Material' },
+    '006400':{ name:'삼성SDI',         price:285000, change:5500,  pct:1.97,  sector:'Technology' },
+  };
+
+  const INDICES = [
+    { name:'KOSPI',   value:2680.35, change:15.20,  pct:0.57 },
+    { name:'KOSDAQ',  value:845.70,  change:-3.40,  pct:-0.40 },
+    { name:'S&P 500', value:5321.41, change:28.60,  pct:0.54 },
+    { name:'NASDAQ',  value:16920.80,change:125.30, pct:0.75 },
+  ];
+
+  const HOLDINGS = [
+    { ticker:'AAPL',    qty:10, avg:175.00 },
+    { ticker:'MSFT',    qty:5,  avg:380.00 },
+    { ticker:'NVDA',    qty:20, avg:95.00 },
+    { ticker:'005930',  qty:50, avg:78000 },
+    { ticker:'JPM',     qty:8,  avg:190.00 },
+  ];
+
+  const NEWS = [
+    { title:'NVIDIA, AI 수혜로 사상 최고가 경신', time:'2시간 전', source:'연합뉴스' },
+    { title:'삼성전자, 2분기 실적 시장 기대치 웃돌', time:'3시간 전', source:'한국경제' },
+    { title:'Fed, 금리 동결... 시장 안도세 확산', time:'5시간 전', source:'Reuters' },
+    { title:'SK하이닉스 HBM 수주 폭발적 증가', time:'6시간 전', source:'조선비즈' },
+    { title:'테슬라, 유럽 판매량 하락 전망', time:'8시간 전', source:'Bloomberg' },
+    { title:'애플, AI 기능 탑재 iOS 18 공개', time:'10시간 전', source:'The Verge' },
+  ];
+
+  const fmt = (n, d=2) => n.toFixed(d);
+  const isKRW = t => !isNaN(Number(t)) && t.length >= 6;
+  const fmtPrice = (t, p) => isKRW(t) ? p.toLocaleString('ko-KR') : '$' + p.toLocaleString('en-US',{minimumFractionDigits:2});
+  const fmtChange = (t, c) => { const s = c>=0?'+':''; return isKRW(t) ? s+c.toLocaleString('ko-KR') : s+'$'+Math.abs(c).toLocaleString('en-US',{minimumFractionDigits:2}); };
+
+  function renderTicker() {
+    const items = Object.entries(STOCKS).map(([t,s]) => {
+      const color = s.pct>=0?'text-green-400':'text-red-400';
+      const arrow = s.pct>=0?'▲':'▼';
+      return `<span class="inline-flex items-center gap-2 px-4"><span class="text-gray-300 font-medium">${t}</span><span class="text-gray-200">${fmtPrice(t,s.price)}</span><span class="${color}">${arrow}${fmt(Math.abs(s.pct))}%</span></span>`;
+    }).join('');
+    document.getElementById('tickerBar').innerHTML = items + items;
+  }
+
+  function renderIndices() {
+    document.getElementById('indicesGrid').innerHTML = INDICES.map(i => {
+      const up = i.pct>=0; const cls = up?'glow-green border-green-900/40':'glow-red border-red-900/40';
+      const nc = up?'text-green-400':'text-red-400'; const a = up?'▲':'▼';
+      return `<div class="card ${cls} p-3"><div class="text-xs text-gray-400 mb-1">${i.name}</div><div class="text-lg font-semibold">${i.value.toLocaleString()}</div><div class="${nc} text-sm mt-1">${a} ${fmt(Math.abs(i.pct))}% (${up?'+':''}${fmt(i.change)})</div></div>`;
+    }).join('');
+  }
+
+  function renderWatchlist() {
+    document.getElementById('watchlistGrid').innerHTML = Object.entries(STOCKS).map(([t,s]) => {
+      const up = s.pct>=0; const nc = up?'text-green-400':'text-red-400';
+      const badge = up?'bg-green-900/30 text-green-400':'bg-red-900/30 text-red-400';
+      const arrow = up?'▲':'▼'; const sid = 'spark-'+t.replace('.','');
+      return `<div class="card p-3 cursor-pointer hover:border-[#3a3d4a] transition stock-card" data-ticker="${t}"><div class="flex items-start justify-between mb-2"><div><div class="font-semibold text-sm">${t}</div><div class="text-xs text-gray-500">${s.name}</div></div><span class="text-[10px] px-2 py-0.5 rounded ${badge}">${s.sector}</span></div><div class="text-lg font-semibold mb-1">${fmtPrice(t,s.price)}</div><div class="flex items-center justify-between"><span class="${nc} text-sm">${arrow} ${fmt(Math.abs(s.pct))}%</span><canvas id="${sid}" width="80" height="32" class="opacity-70"></canvas></div></div>`;
+    }).join('');
+
+    Object.entries(STOCKS).forEach(([t,s]) => {
+      const canvas = document.getElementById('spark-'+t.replace('.',''));
+      if(!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const pts = Array.from({length:20},(_,i)=> s.price*(1+(s.pct/100)*Math.sin(i/3)+(Math.random()-0.5)*0.01));
+      const mn = Math.min(...pts), mx = Math.max(...pts);
+      ctx.strokeStyle = s.pct>=0?'#22c55e':'#ef4444'; ctx.lineWidth=1.5; ctx.beginPath();
+      pts.forEach((p,i)=>{ const x=(i/19)*canvas.width; const y=canvas.height-((p-mn)/(mx-mn||1))*canvas.height*0.8-canvas.height*0.1; i===0?ctx.moveTo(x,y):ctx.lineTo(x,y); });
+      ctx.stroke();
+    });
+
+    document.querySelectorAll('.stock-card').forEach(c => c.addEventListener('click', ()=>showChart(c.dataset.ticker)));
+  }
+
+  function renderHoldings() {
+    const tbody = document.getElementById('holdingsBody');
+    let totalVal=0, totalCost=0;
+    tbody.innerHTML = HOLDINGS.map(h => {
+      const s=STOCKS[h.ticker]; const cv=s.price*h.qty; const costv=h.avg*h.qty;
+      const pnl=((s.price-h.avg)/h.avg*100); const up=pnl>=0;
+      totalVal+=cv; totalCost+=costv;
+      const nc=up?'text-green-400':'text-red-400';
+      return `<tr class="border-b border-[#2a2d3a] hover:bg-[#1e2130] transition cursor-pointer stock-card" data-ticker="${h.ticker}"><td class="py-2"><span class="font-medium">${h.ticker}</span><br><span class="text-xs text-gray-500">${s.name}</span></td><td class="text-right py-2">${h.qty}</td><td class="text-right py-2">${fmtPrice(h.ticker,h.avg)}</td><td class="text-right py-2">${fmtPrice(h.ticker,s.price)}</td><td class="text-right py-2 ${nc} font-medium">${up?'+':''}${fmt(pnl)}%</td></tr>`;
+    }).join('');
+    const totalPnlPct = ((totalVal-totalCost)/totalCost*100);
+    document.getElementById('portfolioTotal').innerHTML = `<div class="text-xs text-gray-400">총 평가금액</div><div class="text-xl font-bold">$${totalVal.toLocaleString('en-US',{minimumFractionDigits:2})}</div><div class="text-sm ${totalPnlPct>=0?'text-green-400':'text-red-400'}">${totalPnlPct>=0?'+':''}${fmt(totalPnlPct)}%</div>`;
+
+    const ctx = document.getElementById('portfolioChart').getContext('2d');
+    if(window._pc) window._pc.destroy();
+    const colors=['#3b82f6','#22c55e','#f59e0b','#8b5cf6','#ef4444'];
+    window._pc = new Chart(ctx,{type:'doughnut',data:{labels:HOLDINGS.map(h=>h.ticker),datasets:[{data:HOLDINGS.map(h=>STOCKS[h.ticker].price*h.qty),backgroundColor:colors,borderWidth:0}]},options:{plugins:{legend:{position:'bottom',labels:{color:'#9ca3af',padding:12,font:{size:11}}}},cutout:'65%'}});
+  }
+
+  function renderSector() {
+    const sectors={};
+    Object.values(STOCKS).forEach(s=>{if(!sectors[s.sector])sectors[s.sector]={total:0,count:0};sectors[s.sector].total+=s.pct;sectors[s.sector].count++;});
+    const labels=Object.keys(sectors), avgs=labels.map(l=>sectors[l].total/sectors[l].count), counts=labels.map(l=>sectors[l].count);
+    const barColors=avgs.map(v=>v>=0?'#22c55e':'#ef4444');
+    const ctx1=document.getElementById('sectorChart').getContext('2d');
+    if(window._sc) window._sc.destroy();
+    window._sc=new Chart(ctx1,{type:'bar',data:{labels,datasets:[{data:avgs,backgroundColor:barColors,borderRadius:6,barPercentage:0.6}]},options:{indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{grid:{color:'#2a2d3a'},ticks:{color:'#9ca3af',callback:v=>v+'%'}},y:{grid:{display:false},ticks:{color:'#e1e5ea',font:{size:12}}}}}});
+    const ctx2=document.getElementById('sectorPieChart').getContext('2d');
+    if(window._spc) window._spc.destroy();
+    const pc=['#3b82f6','#22c55e','#f59e0b','#8b5cf6','#ef4444','#06b6d4','#ec4899'];
+    window._spc=new Chart(ctx2,{type:'pie',data:{labels,datasets:[{data:counts,backgroundColor:pc.slice(0,labels.length),borderWidth:0}]},options:{plugins:{legend:{position:'bottom',labels:{color:'#9ca3af',padding:10,font:{size:11}}}}}});
+  }
+
+  let currentTicker='AAPL', currentRange=30;
+  function generatePriceData(base,days,pct){
+    const data=[]; let price=base*(1-pct/100*0.3); const vol=base*0.015;
+    for(let i=0;i<days;i++){price+=(Math.random()-0.48)*vol;price=Math.max(price,base*0.5);data.push(price);}
+    const scale=base/data[data.length-1]; return data.map(p=>p*scale);
+  }
+  function showChart(ticker,range){
+    currentTicker=ticker||currentTicker; currentRange=range||currentRange;
+    const s=STOCKS[currentTicker]; if(!s)return;
+    document.getElementById('chartTitle').textContent=currentTicker;
+    document.getElementById('chartSubtitle').textContent=s.name;
+    const prices=generatePriceData(s.price,currentRange,s.pct);
+    const labels=Array.from({length:currentRange},(_,i)=>{const d=new Date();d.setDate(d.getDate()-(currentRange-i));return `${d.getMonth()+1}/${d.getDate()}`;});
+    const ctx=document.getElementById('priceChart').getContext('2d');
+    if(window._priceC) window._priceC.destroy();
+    const grad=ctx.createLinearGradient(0,0,0,280);
+    if(s.pct>=0){grad.addColorStop(0,'rgba(34,197,94,0.25)');grad.addColorStop(1,'rgba(34,197,94,0)');}
+    else{grad.addColorStop(0,'rgba(239,68,68,0.25)');grad.addColorStop(1,'rgba(239,68,68,0)');}
+    window._priceC=new Chart(ctx,{type:'line',data:{labels,datasets:[{data:prices,borderColor:s.pct>=0?'#22c55e':'#ef4444',backgroundColor:grad,fill:true,tension:0.3,pointRadius:0,pointHoverRadius:4,borderWidth:2}]},options:{responsive:true,interaction:{mode:'index',intersect:false},plugins:{legend:{display:false},tooltip:{backgroundColor:'#1a1d27',titleColor:'#e1e5ea',bodyColor:'#e1e5ea',borderColor:'#2a2d3a',borderWidth:1,callbacks:{label:ctx=>fmtPrice(currentTicker,ctx.parsed.y)}}},scales:{x:{grid:{color:'#2a2d3a'},ticks:{color:'#9ca3af',maxTicksLimit:8}},y:{grid:{color:'#2a2d3a'},ticks:{color:'#9ca3af',callback:v=>fmtPrice(currentTicker,v)}}}}});
+  }
+
+  document.getElementById('chartRangeBtns').addEventListener('click',e=>{
+    const btn=e.target.closest('.range-btn'); if(!btn)return;
+    document.querySelectorAll('.range-btn').forEach(b=>{b.className=b.className.replace(/bg-blue-600 text-white/g,'bg-[#2a2d3a] text-gray-400');});
+    btn.className=btn.className.replace(/bg-\[\#2a2d3a\] text-gray-400/g,'bg-blue-600 text-white');
+    showChart(null,parseInt(btn.dataset.range));
+  });
+
+  function renderNews(){
+    document.getElementById('newsGrid').innerHTML=NEWS.map(n=>`<div class="card p-4 hover:border-[#3a3d4a] transition cursor-pointer"><div class="text-xs text-gray-500 mb-2">${n.source} · ${n.time}</div><div class="text-sm font-medium leading-snug">${n.title}</div></div>`).join('');
+  }
+
+  document.querySelectorAll('.tab-btn').forEach(btn=>btn.addEventListener('click',()=>{
+    document.querySelectorAll('.tab-btn').forEach(b=>{b.className=b.className.replace(/tab-active/,'tab-inactive');});
+    btn.className=btn.className.replace(/tab-inactive/,'tab-active');
+    document.querySelectorAll('.tab-content').forEach(c=>c.classList.add('hidden'));
+    document.getElementById('tab-'+btn.dataset.tab).classList.remove('hidden');
+  }));
+
+  document.getElementById('searchInput').addEventListener('input',e=>{
+    const q=e.target.value.toUpperCase();
+    document.querySelectorAll('.stock-card').forEach(card=>{
+      const t=card.dataset.ticker; const s=STOCKS[t];
+      card.style.display=(!q||t.includes(q)||(s&&s.name.toUpperCase().includes(q)))?'':'none';
+    });
+  });
+
+  document.getElementById('refreshBtn').addEventListener('click',()=>{
+    Object.values(STOCKS).forEach(s=>{const d=(Math.random()-0.5)*s.price*0.005;s.price=Math.round((s.price+d)*100)/100;s.change=Math.round((s.change+d)*100)/100;s.pct=Math.round(s.change/s.price*10000)/100;});
+    renderAll();
+  });
+
+  function updateClock(){const n=new Date();document.getElementById('lastUpdate').textContent=`업데이트: ${n.getHours().toString().padStart(2,'0')}:${n.getMinutes().toString().padStart(2,'0')}:${n.getSeconds().toString().padStart(2,'0')}`;}
+
+  function renderAll(){renderTicker();renderIndices();renderWatchlist();renderHoldings();renderSector();renderNews();showChart();updateClock();}
+  renderAll();
+  setInterval(updateClock,1000);
+  </script>
+</body>
+</html>
